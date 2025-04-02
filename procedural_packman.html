@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Eyelids - Proportional Editing & Vertex Control</title>
+    <style>
+        body { margin: 0; font-family: sans-serif; background-color: #050505; color: #fff; overflow: hidden; /* Prevent scrollbars */ }
+        canvas { display: block; }
+        #ui-container {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.75); /* Slightly darker */
+            padding: 15px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px; /* Increased gap slightly */
+            z-index: 10;
+            max-height: calc(100vh - 40px); /* Prevent overflow */
+            overflow-y: auto; /* Allow scrolling if needed */
+        }
+        .slider-container, .checkbox-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        label {
+            min-width: 90px; /* Adjusted min-width */
+            text-align: right;
+            font-size: 0.9em;
+            flex-shrink: 0; /* Prevent label shrinking */
+        }
+        input[type="range"] {
+            width: 150px;
+            cursor: pointer;
+            appearance: none;
+            height: 8px;
+            background: #555;
+            border-radius: 4px;
+            outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        input[type="range"]::-moz-range-thumb {
+            width: 16px;
+            height: 16px;
+            background: #007bff;
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+        }
+        input[type="checkbox"] {
+            cursor: pointer;
+            width: 16px;
+            height: 16px;
+            margin-left: 5px; /* Align with sliders */
+        }
+        span {
+            min-width: 45px; /* Adjusted min-width */
+            text-align: left;
+            font-family: monospace;
+            font-size: 0.9em;
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        #info {
+            position: absolute;
+            bottom: 10px;
+            left: 10px;
+            color: #aaa;
+            font-size: 0.8em;
+            z-index: 10;
+        }
+        #particle-id-label {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 5px;
+            z-index: 10;
+            font-size: 0.9em;
+            font-family: 'Arial', sans-serif;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+            min-width: 80px;
+            display: none; /* Initially hidden */
+        }
+        /* Style for separators */
+        .separator {
+            height: 1px;
+            background-color: rgba(255, 255, 255, 0.2);
+            margin: 8px 0; /* Add some vertical space */
+        }
+
+    </style>
+</head>
+<body>
+    <div id="canvas-container"></div>
+
+    <div id="ui-container">
+        <div class="slider-container">
+            <label for="topLidSlider">Top Lid:</label>
+            <input type="range" id="topLidSlider" min="0" max="100" value="0">
+            <span id="topLidValue">0°</span>
+        </div>
+        <div class="slider-container">
+            <label for="bottomLidSlider">Bottom Lid:</label>
+            <input type="range" id="bottomLidSlider" min="0" max="100" value="0">
+            <span id="bottomLidValue">0°</span>
+        </div>
+        <div class="slider-container">
+            <label for="xScaleSlider">X Scale:</label>
+            <input type="range" id="xScaleSlider" min="1" max="200" value="100">
+            <span id="xScaleValue">1.00</span>
+        </div>
+
+        <div class="separator"></div>
+        <div class="checkbox-container">
+            <label for="propEditCheckbox">Prop. Edit:</label>
+            <input type="checkbox" id="propEditCheckbox" checked>
+        </div>
+        <div class="slider-container">
+            <label for="propRadiusSlider">Radius:</label>
+            <input type="range" id="propRadiusSlider" min="1" max="100" value="30">
+            <span id="propRadiusValue">3.0</span>
+        </div>
+
+        <div class="separator"></div>
+        <div class="slider-container">
+            <label for="topLeftSlider">Top Left Y:</label>
+            <input type="range" id="topLeftSlider" min="-5" max="5" value="0" step="0.1">
+            <span id="topLeftValue">0.0</span>
+        </div>
+        <div class="slider-container">
+            <label for="topRightSlider">Top Right Y:</label>
+            <input type="range" id="topRightSlider" min="-5" max="5" value="0" step="0.1">
+            <span id="topRightValue">0.0</span>
+        </div>
+        <div class="slider-container">
+            <label for="bottomLeftSlider">Bottom Left Y:</label>
+            <input type="range" id="bottomLeftSlider" min="-5" max="5" value="0" step="0.1">
+            <span id="bottomLeftValue">0.0</span>
+        </div>
+        <div class="slider-container">
+            <label for="bottomRightSlider">Bottom Right Y:</label>
+            <input type="range" id="bottomRightSlider" min="-5" max="5" value="0" step="0.1">
+            <span id="bottomRightValue">0.0</span>
+        </div>
+    </div>
+
+    <div id="info">Click and drag particles. Toggle proportional editing. Use sliders for fine control.</div>
+    <div id="particle-id-label"></div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.163.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.163.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+        let scene, camera, renderer, composer;
+        let controls;
+        let topLidGroup, bottomLidGroup, topParticleGroup, bottomParticleGroup;
+        let topParticles, bottomParticles;
+        let sphereRadius = 5;
+        let topLidAngle = 0;
+        let bottomLidAngle = 0;
+        let xScaleFactor = 1;
+
+        const maxRotationAngle = Math.PI / 2;
+
+        // --- Interaction Variables ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        let selectedParticleIndex = null;
+        let selectedParticleObject = null;
+        let originalTopPositions = null; // Stores original vertex data (x,y,z, x,y,z, ...)
+        let originalBottomPositions = null;
+        const plane = new THREE.Plane();
+        const intersection = new THREE.Vector3();
+        const worldPosition = new THREE.Vector3();
+        const currentLocalPos = new THREE.Vector3();
+        const originalSelectedLocalPos = new THREE.Vector3(); // Used for drag calculations
+        const totalDisplacementLocal = new THREE.Vector3(); // Used for drag calculations
+        const neighborLocalPos = new THREE.Vector3(); // Temp vector for neighbor calculations
+        const influencedPos = new THREE.Vector3(); // Temp vector for influenced neighbor position
+        const offset = new THREE.Vector3();
+        const controlledOriginalPos = new THREE.Vector3(); // Temp vector for controlled vertex original position
+
+        // --- Proportional Editing Variables ---
+        let proportionalEditingEnabled = true;
+        let proportionalEditRadius = 3.0;
+
+        // --- Specific Vertex Control Variables ---
+        const vertexIndices = { // Define the target vertex indices
+            topLeft: 1195,
+            topRight: 1183,
+            bottomLeft: 1244-1225, // Index within bottomParticles geometry
+            bottomRight: 1232-1225  // Index within bottomParticles geometry
+        };
+        // Store original Y positions for controlled vertices
+        const originalVertexY = {
+            topLeft: 0,
+            topRight: 0,
+            bottomLeft: 0,
+            bottomRight: 0
+        };
+
+
+        // --- UI Elements ---
+        const topLidSlider = document.getElementById('topLidSlider');
+        const bottomLidSlider = document.getElementById('bottomLidSlider');
+        const xScaleSlider = document.getElementById('xScaleSlider');
+        const topLidValueSpan = document.getElementById('topLidValue');
+        const bottomLidValueSpan = document.getElementById('bottomLidValue');
+        const xScaleValueSpan = document.getElementById('xScaleValue');
+        const propEditCheckbox = document.getElementById('propEditCheckbox');
+        const propRadiusSlider = document.getElementById('propRadiusSlider');
+        const propRadiusValueSpan = document.getElementById('propRadiusValue');
+        const canvasContainer = document.getElementById('canvas-container');
+        const particleIdLabel = document.getElementById('particle-id-label');
+        // New Slider Elements
+        const topLeftSlider = document.getElementById('topLeftSlider');
+        const topRightSlider = document.getElementById('topRightSlider');
+        const bottomLeftSlider = document.getElementById('bottomLeftSlider');
+        const bottomRightSlider = document.getElementById('bottomRightSlider');
+        const topLeftValueSpan = document.getElementById('topLeftValue');
+        const topRightValueSpan = document.getElementById('topRightValue');
+        const bottomLeftValueSpan = document.getElementById('bottomLeftValue');
+        const bottomRightValueSpan = document.getElementById('bottomRightValue');
+
+
+        // --- Particle ID Management ---
+        const topParticleIds = [];
+        const bottomParticleIds = [];
+        let nextParticleId = 1;
+
+        function init() {
+            // --- Scene Setup ---
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x050505);
+
+            // --- Camera Setup ---
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 3, 12);
+            camera.lookAt(0, 0, 0);
+
+            // --- Renderer Setup ---
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.localClippingEnabled = true;
+            canvasContainer.appendChild(renderer.domElement);
+
+            // --- Lighting ---
+            const ambientLight = new THREE.AmbientLight(0xcccccc, 0.4);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+
+            // --- Geometry ---
+            const segments = 48; // widthSegments
+            const heightSegments = segments / 2; // heightSegments
+            const topHemisphereGeometry = new THREE.SphereGeometry(
+                sphereRadius, segments, heightSegments, 0, Math.PI * 2, 0, Math.PI / 2
+            );
+            const bottomHemisphereGeometry = new THREE.SphereGeometry(
+                sphereRadius, segments, heightSegments, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2
+            );
+
+            // --- Store Original Positions ---
+            originalTopPositions = topHemisphereGeometry.attributes.position.clone().array;
+            originalBottomPositions = bottomHemisphereGeometry.attributes.position.clone().array;
+
+             // --- Store Original Y for Controlled Vertices ---
+            const topVertexCount = topHemisphereGeometry.attributes.position.count;
+            const bottomVertexCount = bottomHemisphereGeometry.attributes.position.count;
+            console.log(bottomVertexCount)
+
+            if (vertexIndices.topLeft < topVertexCount && vertexIndices.topRight < topVertexCount) {
+                originalVertexY.topLeft = originalTopPositions[vertexIndices.topLeft * 3 + 1];
+                originalVertexY.topRight = originalTopPositions[vertexIndices.topRight * 3 + 1];
+            } else { console.error("Top vertex indices out of bounds!"); }
+            if (vertexIndices.bottomLeft < bottomVertexCount && vertexIndices.bottomRight < bottomVertexCount) {
+                originalVertexY.bottomLeft = originalBottomPositions[vertexIndices.bottomLeft * 3 + 1];
+                originalVertexY.bottomRight = originalBottomPositions[vertexIndices.bottomRight * 3 + 1];
+            } else { console.error("Bottom vertex indices out of bounds!"); }
+
+
+            // --- Solid Mesh Materials ---
+             const solidMaterial = new THREE.MeshPhongMaterial({ color: 0xffff01, side: THREE.DoubleSide, transparent: true, opacity: 1 });
+
+            // --- Particle Material ---
+            const particleMaterial = new THREE.PointsMaterial({ color: 0xffff01, size: 0.15, sizeAttenuation: true, transparent: true, opacity: 0.9 });
+
+            // --- Create Meshes & Particles ---
+            const topLidMesh = new THREE.Mesh(topHemisphereGeometry, solidMaterial);
+            const bottomLidMesh = new THREE.Mesh(bottomHemisphereGeometry, solidMaterial);
+            topParticles = new THREE.Points(topHemisphereGeometry, particleMaterial);
+            bottomParticles = new THREE.Points(bottomHemisphereGeometry, particleMaterial);
+
+             // --- Assign IDs to Particles ---
+            for (let i = 0; i < topVertexCount; i++) { topParticleIds.push(nextParticleId++); }
+            for (let i = 0; i < bottomVertexCount; i++) { bottomParticleIds.push(nextParticleId++); }
+
+            // --- Groups ---
+            topLidGroup = new THREE.Group(); topLidGroup.add(topLidMesh);
+            bottomLidGroup = new THREE.Group(); bottomLidGroup.add(bottomLidMesh);
+            topParticleGroup = new THREE.Group(); topParticleGroup.add(topParticles);
+            bottomParticleGroup = new THREE.Group(); bottomParticleGroup.add(bottomParticles);
+            scene.add(topLidGroup, bottomLidGroup, topParticleGroup, bottomParticleGroup);
+
+            // --- Controls ---
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; controls.dampingFactor = 0.05; controls.screenSpacePanning = false;
+            controls.minDistance = 5; controls.maxDistance = 50; controls.target.set(0, 0, 0);
+
+            // --- Post-processing (Bloom) ---
+            composer = new EffectComposer(renderer);
+            composer.addPass(new RenderPass(scene, camera));
+            const bloomPass = new UnrealBloomPass( new THREE.Vector2(window.innerWidth, window.innerHeight), 0.5, 0.3, 0.8);
+            composer.addPass(bloomPass);
+            composer.addPass(new OutputPass());
+
+            // --- UI Event Listeners ---
+            topLidSlider.addEventListener('input', (event) => { topLidAngle = (parseFloat(event.target.value) / 100) * maxRotationAngle; topLidValueSpan.textContent = `${Math.round(THREE.MathUtils.radToDeg(topLidAngle))}°`; });
+            bottomLidSlider.addEventListener('input', (event) => { bottomLidAngle = (parseFloat(event.target.value) / 100) * maxRotationAngle; bottomLidValueSpan.textContent = `${Math.round(THREE.MathUtils.radToDeg(bottomLidAngle))}°`; });
+            xScaleSlider.addEventListener('input', (event) => { xScaleFactor = parseFloat(event.target.value) / 100; xScaleValueSpan.textContent = xScaleFactor.toFixed(2); });
+            propEditCheckbox.addEventListener('change', (event) => { proportionalEditingEnabled = event.target.checked; });
+            propRadiusSlider.addEventListener('input', (event) => { proportionalEditRadius = parseFloat(event.target.value) / 10.0; if (propRadiusValueSpan) propRadiusValueSpan.textContent = proportionalEditRadius.toFixed(1); });
+
+            // --- Specific Vertex Slider Listeners ---
+            topLeftSlider.addEventListener('input', (event) => handleVertexSlider(event, 'topLeft', topParticles, originalTopPositions, topLeftValueSpan));
+            topRightSlider.addEventListener('input', (event) => handleVertexSlider(event, 'topRight', topParticles, originalTopPositions, topRightValueSpan));
+            bottomLeftSlider.addEventListener('input', (event) => handleVertexSlider(event, 'bottomLeft', bottomParticles, originalBottomPositions, bottomLeftValueSpan));
+            bottomRightSlider.addEventListener('input', (event) => handleVertexSlider(event, 'bottomRight', bottomParticles, originalBottomPositions, bottomRightValueSpan));
+
+            // --- Mouse Interaction Listeners ---
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
+            renderer.domElement.addEventListener('pointermove', onPointerMove);
+            renderer.domElement.addEventListener('pointerup', onPointerUp);
+            renderer.domElement.addEventListener('pointerleave', onPointerUp); // Treat leaving as pointer up
+
+            // --- Window Resize ---
+            window.addEventListener('resize', onWindowResize, false);
+
+            // --- Initialize UI & Start ---
+            topLidValueSpan.textContent = `${Math.round(THREE.MathUtils.radToDeg(topLidAngle))}°`;
+            bottomLidValueSpan.textContent = `${Math.round(THREE.MathUtils.radToDeg(bottomLidAngle))}°`;
+            xScaleValueSpan.textContent = xScaleFactor.toFixed(2);
+            propEditCheckbox.checked = proportionalEditingEnabled;
+            if (propRadiusValueSpan) propRadiusValueSpan.textContent = proportionalEditRadius.toFixed(1);
+            else console.error("Element with ID 'propRadiusValue' not found.");
+            propRadiusSlider.value = proportionalEditRadius * 10;
+            topLeftValueSpan.textContent = topLeftSlider.value; topRightValueSpan.textContent = topRightSlider.value;
+            bottomLeftValueSpan.textContent = bottomLeftSlider.value; bottomRightValueSpan.textContent = bottomRightSlider.value;
+
+            animate();
+        }
+
+        // --- Helper function for Vertex Sliders (Now includes Proportional Editing) ---
+        function handleVertexSlider(event, vertexKey, particleObject, originalPositions, valueSpan) {
+            const sliderValue = parseFloat(event.target.value); // This is the *total displacement* in Y
+            const vertexIndex = vertexIndices[vertexKey];
+            const positions = particleObject.geometry.attributes.position;
+            const originalY = originalVertexY[vertexKey]; // Original Y of the controlled vertex
+            const vertexCount = positions.count;
+
+            // Calculate new Y position for the directly controlled vertex
+            const newY = originalY + sliderValue;
+
+            // Get original X and Z for the controlled vertex
+            const originalX = originalPositions[vertexIndex * 3];
+            const originalZ = originalPositions[vertexIndex * 3 + 2];
+
+            // --- Apply change to the directly controlled vertex ---
+            positions.setXYZ(vertexIndex, originalX, newY, originalZ);
+
+            // --- Apply Proportional Editing if enabled ---
+            if (proportionalEditingEnabled) {
+                // Get the original position of the *controlled* vertex for distance calculation
+                controlledOriginalPos.fromArray(originalPositions, vertexIndex * 3);
+
+                // Iterate through all *other* vertices in the same object
+                for (let i = 0; i < vertexCount; i++) {
+                    if (i === vertexIndex) continue; // Skip the vertex we just set
+
+                    // Get original position of the neighbor vertex
+                    neighborLocalPos.fromArray(originalPositions, i * 3);
+
+                    // Calculate distance from the *controlled* vertex's original position
+                    const dist = neighborLocalPos.distanceTo(controlledOriginalPos);
+
+                    if (dist < proportionalEditRadius) {
+                        // Calculate falloff factor
+                        const falloff = calculateFalloff(dist, proportionalEditRadius);
+
+                        // Calculate the Y displacement to apply to this neighbor
+                        const neighborDisplacementY = sliderValue * falloff;
+
+                        // Get neighbor's original position details
+                        const neighborOriginalX = originalPositions[i * 3];
+                        const neighborOriginalY = originalPositions[i * 3 + 1];
+                        const neighborOriginalZ = originalPositions[i * 3 + 2];
+
+                        // Calculate neighbor's new Y position
+                        const neighborNewY = neighborOriginalY + neighborDisplacementY;
+
+                        // Set the influenced neighbor's position (only changing Y)
+                        positions.setXYZ(i, neighborOriginalX, neighborNewY, neighborOriginalZ);
+                    }
+                     // else {
+                        // Optional: Could reset vertices outside radius here, but onPointerUp handles the final state.
+                        // Resetting here might cause conflicts if multiple sliders influence the same area.
+                        // Let's rely on onPointerUp for the final reset based on *all* slider states.
+                    // }
+                }
+            }
+            // else {
+                 // If prop edit is OFF, we only modified the single vertex directly.
+                 // We might need to ensure other vertices are reset if prop edit was just turned off,
+                 // but again, onPointerUp handles the final state consolidation.
+            // }
+
+
+            positions.needsUpdate = true; // Mark buffer for update
+
+            // Update the value display
+            if (valueSpan) {
+                valueSpan.textContent = sliderValue.toFixed(1);
+            }
+        }
+
+
+        function updateMousePosition(event) {
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+        }
+
+        function onPointerDown(event) {
+            if (event.target !== renderer.domElement) return; // Ignore clicks on UI
+
+            updateMousePosition(event);
+            raycaster.setFromCamera(mouse, camera);
+            raycaster.params.Points.threshold = 0.2; // Adjust threshold for easier clicking
+
+            const intersects = raycaster.intersectObjects([topParticles, bottomParticles]);
+
+            if (intersects.length > 0) {
+                controls.enabled = false; // Disable camera pan/zoom/rotate
+                selectedParticleObject = intersects[0].object;
+                selectedParticleIndex = intersects[0].index;
+
+                // Get world position for plane setup
+                const positions = selectedParticleObject.geometry.attributes.position;
+                worldPosition.fromBufferAttribute(positions, selectedParticleIndex);
+                selectedParticleObject.localToWorld(worldPosition);
+
+                plane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(plane.normal), worldPosition);
+
+                // Calculate offset from exact intersection point
+                if (raycaster.ray.intersectPlane(plane, intersection)) {
+                    offset.copy(intersection).sub(worldPosition);
+                }
+
+                canvasContainer.style.cursor = 'grabbing';
+
+                // --- Update Particle ID Label ---
+                let particleId;
+                const ids = (selectedParticleObject === topParticles) ? topParticleIds : bottomParticleIds;
+                particleId = ids[selectedParticleIndex];
+                if (particleIdLabel) {
+                    particleIdLabel.textContent = `Particle ID: ${particleId}`;
+                    particleIdLabel.style.display = 'block';
+                }
+
+            } else {
+                // Clicked on background
+                selectedParticleIndex = null;
+                selectedParticleObject = null;
+                if (particleIdLabel) particleIdLabel.style.display = 'none';
+            }
+        }
+
+        // Smoothstep falloff function (quadratic falloff: (1 - x)^2 )
+        function calculateFalloff(distance, radius) {
+            const clampedDistance = Math.max(0, Math.min(distance, radius));
+            const normalizedDistance = clampedDistance / radius; // 0 at center, 1 at edge
+            return Math.pow(1.0 - normalizedDistance, 2.0);
+        }
+
+
+        function onPointerMove(event) {
+            if (event.target !== renderer.domElement && selectedParticleIndex === null) return; // Ignore UI hover if not dragging
+
+            updateMousePosition(event);
+
+            if (selectedParticleIndex !== null && selectedParticleObject !== null) {
+                // --- Dragging Logic ---
+                raycaster.setFromCamera(mouse, camera);
+
+                if (raycaster.ray.intersectPlane(plane, intersection)) {
+                    const newWorldPos = intersection.sub(offset); // Apply offset
+                    currentLocalPos.copy(selectedParticleObject.worldToLocal(newWorldPos)); // Target local pos
+
+                    const positions = selectedParticleObject.geometry.attributes.position;
+                    const originalPositions = (selectedParticleObject === topParticles) ? originalTopPositions : originalBottomPositions;
+                    const vertexCount = positions.count;
+
+                    // Get original local position of the *selected* vertex
+                    originalSelectedLocalPos.fromArray(originalPositions, selectedParticleIndex * 3);
+
+                    // Calculate the total displacement vector from original based on drag
+                    totalDisplacementLocal.subVectors(currentLocalPos, originalSelectedLocalPos);
+
+                    // --- Apply Drag Displacement (Direct or Proportional) ---
+                    for (let i = 0; i < vertexCount; i++) {
+                        // Get ORIGINAL local pos of the vertex being processed (neighbor or selected)
+                        neighborLocalPos.fromArray(originalPositions, i * 3);
+
+                        if (i === selectedParticleIndex) {
+                            // Directly set the position of the selected vertex based on drag
+                            positions.setXYZ(i, currentLocalPos.x, currentLocalPos.y, currentLocalPos.z);
+                        } else if (proportionalEditingEnabled) {
+                            // Calculate distance from selected vertex's *original* position
+                            const dist = neighborLocalPos.distanceTo(originalSelectedLocalPos);
+
+                            if (dist < proportionalEditRadius) {
+                                const falloff = calculateFalloff(dist, proportionalEditRadius);
+                                // Calculate the influenced position: original + (total_drag_displacement * falloff)
+                                influencedPos.copy(neighborLocalPos).addScaledVector(totalDisplacementLocal, falloff);
+                                positions.setXYZ(i, influencedPos.x, influencedPos.y, influencedPos.z);
+                            } else {
+                                // Reset vertices outside radius to their base state (original or slider-adjusted)
+                                // This reset is tricky during drag; onPointerUp handles the final state better.
+                                // Let's just apply the proportional edit for now.
+                                // Resetting here might fight with slider adjustments.
+                                // positions.setXYZ(i, neighborLocalPos.x, neighborLocalPos.y, neighborLocalPos.z); // Simple reset to original
+                            }
+                        }
+                        // else {
+                            // If prop edit is off, only the selected vertex (i === selectedParticleIndex) is moved.
+                            // Other vertices remain untouched during the drag move itself.
+                        // }
+                    }
+                    positions.needsUpdate = true; // Mark buffer for update after potential changes
+                }
+            } else {
+                // --- Hover Effect Check (only if not dragging) ---
+                 if (event.target === renderer.domElement) { // Check hover only on canvas
+                     raycaster.setFromCamera(mouse, camera);
+                     raycaster.params.Points.threshold = 0.2;
+                     const intersects = raycaster.intersectObjects([topParticles, bottomParticles]);
+                     canvasContainer.style.cursor = (intersects.length > 0) ? 'grab' : 'default';
+                 } else {
+                     canvasContainer.style.cursor = 'default'; // Reset cursor if over UI
+                 }
+            }
+        }
+
+        function onPointerUp(event) {
+            controls.enabled = true; // Re-enable camera controls
+            canvasContainer.style.cursor = 'default';
+            if (particleIdLabel) particleIdLabel.style.display = 'none';
+
+            if (selectedParticleIndex !== null && selectedParticleObject !== null) {
+                // --- Reset ALL vertices on drag release to their correct state ---
+                // This considers both original positions and current slider values for controlled vertices.
+                const positions = selectedParticleObject.geometry.attributes.position;
+                const originalPositions = (selectedParticleObject === topParticles) ? originalTopPositions : originalBottomPositions;
+                const vertexCount = positions.count;
+
+                for (let i = 0; i < vertexCount; i++) {
+                    // Determine if this vertex is controlled by one of the four corner sliders
+                    let isControlledVertex = false;
+                    let vertexKey = null;
+                    const checkIndices = (selectedParticleObject === topParticles)
+                        ? { topLeft: vertexIndices.topLeft, topRight: vertexIndices.topRight }
+                        : { bottomLeft: vertexIndices.bottomLeft, bottomRight: vertexIndices.bottomRight };
+
+                    for (const key in checkIndices) {
+                        if (i === checkIndices[key]) {
+                            isControlledVertex = true;
+                            vertexKey = key;
+                            break;
+                        }
+                    }
+
+                    let targetY;
+                    if (isControlledVertex) {
+                        // If controlled, reset Y to its original Y + current slider value offset
+                        const slider = document.getElementById(`${vertexKey}Slider`);
+                        targetY = originalVertexY[vertexKey] + parseFloat(slider.value);
+                    } else {
+                        // Otherwise, reset Y to the absolute original Y for this vertex
+                        targetY = originalPositions[i * 3 + 1];
+                    }
+
+                    // Set the final position using original X/Z and the calculated target Y
+                    positions.setXYZ(
+                        i,
+                        originalPositions[i * 3],     // Original X
+                        targetY,                      // Final Target Y
+                        originalPositions[i * 3 + 2]  // Original Z
+                    );
+                }
+                positions.needsUpdate = true; // Mark buffer for update
+
+                // Clear selection state
+                selectedParticleIndex = null;
+                selectedParticleObject = null;
+            }
+            // else: No particle was selected, nothing to reset.
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight); // Update composer size
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Apply general transformations (lids, scale) - applied to groups
+            const topRotation = -topLidAngle;
+            const bottomRotation = bottomLidAngle;
+            topLidGroup.rotation.x = topRotation;
+            bottomLidGroup.rotation.x = bottomRotation;
+            topLidGroup.scale.set(xScaleFactor, 1, 1);
+            bottomLidGroup.scale.set(xScaleFactor, 1, 1);
+            topParticleGroup.rotation.x = topRotation; // Ensure particles follow group transforms
+            bottomParticleGroup.rotation.x = bottomRotation;
+            topParticleGroup.scale.set(xScaleFactor, 1, 1);
+            bottomParticleGroup.scale.set(xScaleFactor, 1, 1);
+
+            controls.update(); // Update orbit controls
+            composer.render(); // Render scene via composer
+        }
+
+        // --- Run ---
+        init();
+
+    </script>
+</body>
+</html>
